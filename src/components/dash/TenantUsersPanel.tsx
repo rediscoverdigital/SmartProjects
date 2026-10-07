@@ -18,7 +18,7 @@ type TenantUser = {
 export function TenantUsersPanel({ users }: { users: TenantUser[] }) {
   const [pending, start] = useTransition();
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [credential, setCredential] = useState<{ email: string; password: string } | null>(null);
+  const [reset, setReset] = useState<{ email: string; name: string; link: string; expiresAt: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -31,8 +31,14 @@ export function TenantUsersPanel({ users }: { users: TenantUser[] }) {
       const res = await resetUserPassword(fd);
       setBusyId(null);
       if (res?.error) setErr(res.error);
-      else if (res?.ok && res.newPassword) {
-        setCredential({ email: res.email || '', password: res.newPassword });
+      else if (res?.ok && res.resetPath) {
+        const origin = typeof window !== 'undefined' ? window.location.origin : '';
+        setReset({
+          email: res.email || '',
+          name: res.name || '',
+          link: `${origin}${res.resetPath}`,
+          expiresAt: res.expiresAt || '',
+        });
       }
     });
   };
@@ -47,46 +53,58 @@ export function TenantUsersPanel({ users }: { users: TenantUser[] }) {
     });
   };
 
-  const copyCred = () => {
-    if (credential) {
-      navigator.clipboard.writeText(`Email: ${credential.email}\nPassword: ${credential.password}`);
+  const copyLink = () => {
+    if (reset) {
+      navigator.clipboard.writeText(reset.link);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
   };
 
+  const expiresLabel = reset?.expiresAt
+    ? new Date(reset.expiresAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+    : '';
+
   return (
     <>
-      {credential && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setCredential(null)}>
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+      {reset && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setReset(null)}>
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-2">
                 <CheckCircle className="h-5 w-5 text-[#4F5C46]" />
-                <h3 className="font-display text-[1.1rem]">Password reset</h3>
+                <h3 className="font-display text-[1.1rem]">Reset link generated</h3>
               </div>
-              <button onClick={() => setCredential(null)} className="rounded-lg p-1 text-black/40 hover:bg-black/[0.05] hover:text-black">
+              <button onClick={() => setReset(null)} className="rounded-lg p-1 text-black/40 hover:bg-black/[0.05] hover:text-black">
                 <X className="h-4 w-4" />
               </button>
             </div>
             <p className="mt-2 text-[0.82rem] text-black/50">
-              Share these credentials with the user securely. This password is shown once.
+              Send this one-time link to <span className="font-semibold text-black/70">{reset.email}</span>. They choose
+              their own new password — you never see it. The link expires at {expiresLabel} and can be used once.
             </p>
-            <div className="mt-4 space-y-2 rounded-xl border border-black/[0.08] bg-black/[0.02] p-4 font-mono text-[0.82rem]">
-              <p><span className="text-black/40">Email:</span> {credential.email}</p>
-              <p><span className="text-black/40">Password:</span> <span className="font-semibold">{credential.password}</span></p>
+            <div className="mt-4 rounded-xl border border-black/[0.08] bg-black/[0.02] p-3.5">
+              <p className="break-all font-mono text-[0.75rem] text-black/70">{reset.link}</p>
             </div>
             <div className="mt-4 flex gap-2">
               <button
-                onClick={copyCred}
+                onClick={copyLink}
                 className="flex flex-1 items-center justify-center gap-2 rounded-full bg-[#0c0c0c] px-4 py-2.5 text-[0.82rem] font-semibold text-white"
               >
                 {copied ? <CheckCircle className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                {copied ? 'Copied' : 'Copy credentials'}
+                {copied ? 'Copied' : 'Copy reset link'}
               </button>
+              <a
+                href={reset.link}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center justify-center gap-2 rounded-full border border-black/10 px-4 py-2.5 text-[0.82rem] font-semibold"
+              >
+                Open
+              </a>
               <button
-                onClick={() => setCredential(null)}
-                className="rounded-full border border-black/10 px-5 py-2.5 text-[0.82rem] font-semibold"
+                onClick={() => setReset(null)}
+                className="rounded-full border border-black/10 px-4 py-2.5 text-[0.82rem] font-semibold"
               >
                 Done
               </button>

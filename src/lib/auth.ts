@@ -105,3 +105,29 @@ export class AuthError extends Error {
     this.status = status;
   }
 }
+
+// ── password reset tokens ──────────────────────────────────
+// The raw token goes to the user (via reset link); only its SHA-256
+// hash is stored, so a database leak cannot be replayed.
+
+const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+export function generateResetToken(): { token: string; tokenHash: string; expiry: Date } {
+  const token = crypto.randomBytes(32).toString('base64url');
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  const expiry = new Date(Date.now() + RESET_TOKEN_TTL_MS);
+  return { token, tokenHash, expiry };
+}
+
+export function hashResetToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+/** Look up a user by a raw reset token, enforcing expiry. */
+export async function findUserByResetToken(token: string) {
+  const tokenHash = hashResetToken(token);
+  const user = await prisma.user.findFirst({
+    where: { passwordResetToken: tokenHash, passwordResetExpiry: { gt: new Date() } },
+  });
+  return user;
+}

@@ -498,18 +498,14 @@ export async function resetUserPassword(formData: FormData) {
     return { error: 'Cannot reset another super admin password.' };
   }
 
-  // Generate a strong random password (admin shares it with the user)
-  const cryptoMod = await import('crypto');
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
-  const bytes = cryptoMod.randomBytes(12);
-  let newPassword = '';
-  for (let i = 0; i < 12; i++) newPassword += alphabet[bytes[i] % alphabet.length];
+  // Issue a single-use, time-limited reset token. Only the SHA-256 hash is
+  // stored — the raw token is handed to the admin once and never persisted.
+  const { generateResetToken } = await import('@/lib/auth');
+  const { token, tokenHash, expiry } = generateResetToken();
 
-  const bcrypt = await import('bcryptjs');
-  const hash = await bcrypt.hash(newPassword, 10);
   await prisma.user.update({
     where: { id: userId },
-    data: { passwordHash: hash, status: 'active' },
+    data: { passwordResetToken: tokenHash, passwordResetExpiry: expiry },
   });
 
   await prisma.auditLog.create({
@@ -517,15 +513,22 @@ export async function resetUserPassword(formData: FormData) {
       restaurantId: targetUser.restaurantId ?? undefined,
       actorId: user.id,
       actorEmail: user.email,
-      action: 'user.password_reset',
+      action: 'user.password_reset_issued',
       entityType: 'User',
       entityId: userId,
-      detail: JSON.stringify({ email: targetUser.email }),
+      detail: JSON.stringify({ email: targetUser.email, expiresAt: expiry.toISOString() }),
     },
   }).catch(() => {});
 
   revalidatePath('/admin');
-  return { ok: true, userId, email: targetUser.email, newPassword };
+  return {
+    ok: true,
+    userId,
+    email: targetUser.email,
+    name: targetUser.name,
+    resetPath: `/reset-password/${token}`,
+    expiresAt: expiry.toISOString(),
+  };
 }
 
 export async function updateUserStatus(userId: string, status: 'active' | 'suspended' | 'invited') {

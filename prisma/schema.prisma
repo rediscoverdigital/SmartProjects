@@ -102,6 +102,10 @@ model User {
   /// The base set comes from `role`; each key set to false disables a capability.
   /// Example: {"canEditMenu":false,"canManageTables":false}
   permissions   String?  // JSON-encoded override patch of the role template
+  /// Password reset: SHA-256 hash of the single-use reset token (never the raw token).
+  passwordResetToken  String?
+  /// When the reset token stops being valid.
+  passwordResetExpiry DateTime?
   lastLoginAt   DateTime?
   createdAt     DateTime @default(now())
 

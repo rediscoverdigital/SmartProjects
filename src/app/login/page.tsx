@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import { loginAction } from '@/app/actions/auth';
 import Link from 'next/link';
-import { ArrowRight, Loader2 } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
+import { ArrowRight, Loader2, CheckCircle } from 'lucide-react';
 
 const DEMO = [
   { email: 'leo.a@example.org', role: 'Super admin' },
@@ -15,6 +16,25 @@ const DEMO = [
 ];
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginInner />
+    </Suspense>
+  );
+}
+
+function ResetBanner() {
+  const searchParams = useSearchParams();
+  if (searchParams.get('reset') !== '1') return null;
+  return (
+    <p className="mt-6 flex items-start gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2.5 text-[0.82rem] text-emerald-300">
+      <CheckCircle className="mt-0.5 h-4 w-4 shrink-0" />
+      Your password has been updated. Sign in with your new password.
+    </p>
+  );
+}
+
+function LoginInner() {
   const [state, action] = useFormState(loginAction, null as any);
   const [email, setEmail] = useState('');
 
@@ -35,6 +55,10 @@ export default function LoginPage() {
 
         <h1 className="mt-8 text-center font-display text-2xl text-[#F4F1E8]">Welcome back</h1>
         <p className="mt-2 text-center text-sm text-white/50">Sign in to your restaurant dashboard</p>
+
+        <Suspense fallback={null}>
+          <ResetBanner />
+        </Suspense>
 
         <form action={action} className="mt-8 space-y-4">
           <div>
