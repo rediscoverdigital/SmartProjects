@@ -453,6 +453,34 @@ export async function createTenant(formData: FormData) {
   };
 }
 
+// ── ORDERS ───────────────────────────────────────────────────
+
+export async function updateOrderStatus(orderId: string, status: 'acknowledged' | 'served' | 'cancelled') {
+  const user = await requireTenant();
+  if (!user.restaurantId) return { error: 'No tenant' };
+
+  // tenant-scoped: only touch orders belonging to this restaurant
+  const order = await prisma.order.findFirst({ where: { id: orderId, restaurantId: user.restaurantId } });
+  if (!order) return { error: 'Order not found.' };
+
+  await prisma.order.update({ where: { id: orderId }, data: { status } });
+
+  await prisma.auditLog.create({
+    data: {
+      restaurantId: user.restaurantId,
+      actorId: user.id,
+      actorEmail: user.email,
+      action: `order.${status}`,
+      entityType: 'Order',
+      entityId: orderId,
+      detail: order.reference,
+    },
+  }).catch(() => {});
+
+  revalidatePath('/dashboard/orders');
+  return { ok: true, status };
+}
+
 // ── TENANT MANAGEMENT (super_admin only) ─────────────────────
 
 export async function suspendTenant(formData: FormData): Promise<void> {

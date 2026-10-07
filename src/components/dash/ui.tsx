@@ -126,7 +126,9 @@ export function Donut({ segments, size = 120 }: { segments: { label: string; val
 export function StatusPill({ status }: { status: string }) {
   const map: Record<string, { bg: string; fg: string; label: string }> = {
     new: { bg: 'rgba(194,94,30,0.12)', fg: '#C25E1E', label: 'New' },
+    submitted: { bg: 'rgba(194,94,30,0.12)', fg: '#C25E1E', label: 'New' },
     acknowledged: { bg: 'rgba(174,148,85,0.15)', fg: '#8E7642', label: 'Acknowledged' },
+    served: { bg: 'rgba(126,143,114,0.16)', fg: '#4F5C46', label: 'Served' },
     resolved: { bg: 'rgba(126,143,114,0.16)', fg: '#4F5C46', label: 'Resolved' },
     cancelled: { bg: 'rgba(0,0,0,0.06)', fg: '#6b6b6b', label: 'Cancelled' },
     active: { bg: 'rgba(126,143,114,0.16)', fg: '#4F5C46', label: 'Active' },

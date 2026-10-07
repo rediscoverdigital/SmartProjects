@@ -5,13 +5,14 @@ import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import {
   LayoutDashboard, UtensilsCrossed, QrCode, Sparkles, BellRing, MessageSquareHeart,
-  BarChart3, Settings, LogOut, Menu, X, ExternalLink,
+  BarChart3, Settings, LogOut, Menu, X, ExternalLink, ShoppingBag,
 } from 'lucide-react';
 import { logoutAction } from '@/app/actions/auth';
 
 const NAV = [
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard, exact: true },
   { href: '/dashboard/floor', label: 'Live floor', icon: BellRing },
+  { href: '/dashboard/orders', label: 'Orders', icon: ShoppingBag },
   { href: '/dashboard/menu', label: 'Menu CMS', icon: UtensilsCrossed },
   { href: '/dashboard/tables', label: 'Tables & objects', icon: QrCode },
   { href: '/dashboard/analytics', label: 'Analytics', icon: BarChart3 },

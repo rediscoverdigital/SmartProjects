@@ -171,6 +171,29 @@ export async function getServiceRequests(restaurantId: string, status?: string) 
   });
 }
 
+export async function getOrders(restaurantId: string) {
+  return prisma.order.findMany({
+    where: { restaurantId },
+    include: { table: true, items: true },
+    orderBy: { createdAt: 'desc' },
+    take: 100,
+  });
+}
+
+export async function getOrderStats(restaurantId: string) {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const [open, today, revenue] = await Promise.all([
+    prisma.order.count({ where: { restaurantId, status: { in: ['submitted', 'acknowledged'] } } }),
+    prisma.order.count({ where: { restaurantId, createdAt: { gte: start } } }),
+    prisma.order.aggregate({
+      where: { restaurantId, createdAt: { gte: start }, status: { not: 'cancelled' } },
+      _sum: { total: true },
+    }),
+  ]);
+  return { open, today, revenueToday: revenue._sum.total || 0 };
+}
+
 export async function getAiUsage(restaurantId: string) {
   const start = new Date();
   start.setDate(1);
