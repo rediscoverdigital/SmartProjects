@@ -297,3 +297,128 @@ export async function uploadLogo(formData: FormData) {
   revalidatePath('/dashboard/branding');
   return { ok: true, logo: publicPath };
 }
+
+// ── TENANT CREATION (super_admin only) ───────────────────────
+import { hashPassword } from '@/lib/auth';
+import crypto from 'crypto';
+
+function formString(formData: FormData, key: string): string {
+  return String(formData.get(key) || '').trim();
+}
+
+export async function createTenant(formData: FormData) {
+  // Require super_admin — this is a platform-level action, not tenant-scoped
+  const user = await requireTenant();
+  if (user.role !== 'super_admin') return { error: 'Only platform admins can create tenants.' };
+
+  const name = formString(formData, 'name');
+  const slug = formString(formData, 'slug').toLowerCase();
+  const ownerName = formString(formData, 'ownerName');
+  const ownerEmail = formString(formData, 'ownerEmail').toLowerCase();
+  const plan = formString(formData, 'plan') || 'growth';
+
+  if (!name) return { error: 'Restaurant name is required.' };
+  if (!slug || !/^[a-z0-9-]+$/.test(slug)) return { error: 'Invalid slug — use lowercase letters, numbers, and hyphens only.' };
+  if (!ownerName || !ownerEmail) return { error: 'Owner name and email are required.' };
+
+  // Check slug uniqueness
+  const existing = await prisma.restaurant.findUnique({ where: { slug } });
+  if (existing) return { error: `A restaurant with slug /${slug} already exists.` };
+
+  // Check owner email uniqueness
+  const existingUser = await prisma.user.findUnique({ where: { email: ownerEmail } });
+  if (existingUser) return { error: `Email ${ownerEmail} is already registered.` };
+
+  // Generate a random password for the owner (they'll reset it)
+  const bcrypt = await import('bcryptjs');
+  const tempPassword = crypto.randomBytes(6).toString('hex');
+
+  const { generatePublicCode } = await import('@/lib/utils');
+
+  // Create the restaurant + owner in a transaction
+  const result = await prisma.$transaction(async (tx) => {
+    const restaurant = await tx.restaurant.create({
+      data: {
+        slug,
+        name,
+        tagline: formString(formData, 'tagline') || undefined,
+        address: formString(formData, 'address') || null,
+        phone: formString(formData, 'phone') || null,
+        email: formString(formData, 'email') || null,
+        primaryColor: formString(formData, 'primaryColor') || undefined,
+        accentColor: formString(formData, 'accentColor') || undefined,
+        surfaceColor: formString(formData, 'surfaceColor') || undefined,
+        textColor: formString(formData, 'textColor') || undefined,
+        themeMode: formString(formData, 'themeMode') || undefined,
+        plan,
+      },
+    });
+
+    // Create the owner user
+    const hash = await bcrypt.hash(tempPassword, 10);
+    const owner = await tx.user.create({
+      data: {
+        email: ownerEmail,
+        name: ownerName,
+        role: 'owner',
+        passwordHash: hash,
+        restaurantId: restaurant.id,
+      },
+    });
+
+    // Auto-provision one table with an NFC+QR object
+    const table = await tx.tableObj.create({
+      data: { restaurantId: restaurant.id, label: 'Table 1' },
+    });
+    let code = generatePublicCode();
+    while (await tx.physicalObject.findUnique({ where: { publicCode: code } })) {
+      code = generatePublicCode();
+    }
+    await tx.physicalObject.create({
+      data: {
+        restaurantId: restaurant.id,
+        tableId: table.id,
+        publicCode: code,
+        objectType: 'table_number',
+        label: 'Table 1 · NFC + QR',
+      },
+    });
+
+    // Create a default subscription
+    const monthlyPrice = plan === 'pro' ? 7500 : plan === 'growth' ? 3000 : 1500;
+    await tx.subscription.create({
+      data: {
+        restaurantId: restaurant.id,
+        plan,
+        status: 'trial',
+        monthlyPrice,
+        renewsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 14-day trial
+      },
+    });
+
+    // Audit log
+    await tx.auditLog.create({
+      data: {
+        actorId: user.id,
+        actorEmail: user.email,
+        action: 'tenant.created',
+        entityType: 'Restaurant',
+        entityId: restaurant.id,
+        detail: JSON.stringify({ name, slug, ownerEmail, plan, publicCode: code }),
+      },
+    }).catch(() => {});
+
+    return { restaurant, owner, tableCode: code, tempPassword };
+  });
+
+  revalidatePath('/admin');
+  return {
+    ok: true,
+    restaurantId: result.restaurant.id,
+    slug: result.restaurant.slug,
+    ownerEmail,
+    tempPassword: result.tempPassword,
+    tableCode: result.tableCode,
+    guestUrl: `/t/${result.tableCode}`,
+  };
+}

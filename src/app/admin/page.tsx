@@ -3,8 +3,10 @@ import Link from 'next/link';
 import { getCurrentUser } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { StatCard, SectionHeading, BarList, StatusPill } from '@/components/dash/ui';
+import { CreateTenantForm } from '@/components/dash/CreateTenantForm';
 import { logoutAction } from '@/app/actions/auth';
-import { Building2, Users, QrCode, Sparkles, TrendingUp, ExternalLink, LogOut, IndianRupee } from 'lucide-react';
+import { createTenant } from '@/app/actions/dashboard';
+import { Plus, Building2, Users, QrCode, Sparkles, TrendingUp, ExternalLink, LogOut, IndianRupee, Copy, CheckCircle } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,6 +59,8 @@ export default async function AdminPage() {
           <StatCard label="AI conversations (mo)" value={aiConvos} icon={Sparkles} />
           <StatCard label="Physical objects" value={objects} icon={QrCode} />
         </div>
+
+        <CreateTenantForm />
 
         <div className="dash-card overflow-hidden">
           <div className="border-b border-black/[0.06] px-5 py-4">
