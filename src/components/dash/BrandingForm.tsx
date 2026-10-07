@@ -22,15 +22,23 @@ export function BrandingForm({ data, guestCode }: { data: any; guestCode: string
   const [surface, setSurface] = useState(data.surfaceColor);
   const [text, setText] = useState(data.textColor);
   const [mode, setMode] = useState(data.themeMode);
+  const [buttonStyle, setButtonStyle] = useState(data.buttonStyle);
   const [cover, setCover] = useState(data.coverImage || '');
   const [name, setName] = useState(data.name);
   const [logo, setLogo] = useState(data.logo || '');
   const [logoUploading, setLogoUploading] = useState(false);
   const [logoError, setLogoError] = useState<string | null>(null);
   const [logoInputKey, setLogoInputKey] = useState(0);
+  const [customizing, setCustomizing] = useState(false); // tracks if user has deviated from a preset
 
   const applyTheme = (t: typeof THEMES[number]) => {
     setPrimary(t.primary); setAccent(t.accent); setSurface(t.surface); setText(t.text); setMode(t.mode);
+    setCustomizing(false);
+  };
+
+  const updateColor = (setter: (v: string) => void) => (v: string) => {
+    setter(v);
+    setCustomizing(true);
   };
 
   return (
@@ -166,36 +174,41 @@ export function BrandingForm({ data, guestCode }: { data: any; guestCode: string
           <div className="dash-card p-5">
             <SectionHeading title="Colours & theme" />
             <div className="flex flex-wrap gap-2.5">
-              {THEMES.map((t) => (
-                <button
-                  key={t.name}
-                  type="button"
-                  onClick={() => applyTheme(t)}
-                  className="flex items-center gap-2.5 rounded-xl border border-black/[0.08] bg-white px-3 py-2 transition hover:border-black/20"
-                >
-                  <span className="flex gap-1">
-                    <span className="h-5 w-5 rounded-full border border-black/10" style={{ background: t.surface }} />
-                    <span className="h-5 w-5 rounded-full border border-black/10" style={{ background: t.accent }} />
-                  </span>
-                  <span className="text-[0.78rem] font-medium">{t.name}</span>
-                </button>
-              ))}
+              {THEMES.map((t) => {
+                const isCurrent = !customizing &&
+                  primary === t.primary && accent === t.accent &&
+                  surface === t.surface && text === t.text && mode === t.mode;
+                return (
+                  <button
+                    key={t.name}
+                    type="button"
+                    onClick={() => applyTheme(t)}
+                    className={`flex items-center gap-2.5 rounded-xl border ${isCurrent ? 'border-black/60 bg-black/[0.08]' : 'border-black/[0.08] bg-white'} px-3 py-2 transition hover:border-black/20`}
+                  >
+                    <span className="flex gap-1">
+                      <span className="h-5 w-5 rounded-full border border-black/10" style={{ background: t.surface }} />
+                      <span className="h-5 w-5 rounded-full border border-black/10" style={{ background: t.accent }} />
+                    </span>
+                    <span className="text-[0.78rem] font-medium">{t.name}</span>
+                  </button>
+                );
+              })}
             </div>
             <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <ColorField label="Primary" name="primaryColor" value={primary} onChange={setPrimary} />
-              <ColorField label="Accent" name="accentColor" value={accent} onChange={setAccent} />
-              <ColorField label="Surface" name="surfaceColor" value={surface} onChange={setSurface} />
-              <ColorField label="Text" name="textColor" value={text} onChange={setText} />
+              <ColorField label="Primary" name="primaryColor" value={primary} onChange={updateColor(setPrimary)} />
+              <ColorField label="Accent" name="accentColor" value={accent} onChange={updateColor(setAccent)} />
+              <ColorField label="Surface" name="surfaceColor" value={surface} onChange={updateColor(setSurface)} />
+              <ColorField label="Text" name="textColor" value={text} onChange={updateColor(setText)} />
             </div>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <Field label="Theme mode">
-                <select name="themeMode" defaultValue={data.themeMode} onChange={(e) => setMode(e.target.value)} className={inputCls}>
+                <select name="themeMode" value={mode} onChange={(e) => setMode(e.target.value)} className={inputCls}>
                   <option value="dark">Dark</option>
                   <option value="light">Light</option>
                 </select>
               </Field>
               <Field label="Button style">
-                <select name="buttonStyle" defaultValue={data.buttonStyle} onChange={(e) => setMode(e.target.value)} className={inputCls}>
+                <select name="buttonStyle" value={buttonStyle} onChange={(e) => setButtonStyle(e.target.value)} className={inputCls}>
                   <option value="rounded">Rounded</option>
                   <option value="pill">Pill</option>
                   <option value="square">Square</option>

@@ -3,6 +3,8 @@
 import crypto from 'crypto';
 import { PrismaClient } from '@prisma/client';
 
+// Use SQLite for local testing (matches dev server's .env.local)
+process.env.DATABASE_URL = 'file:./dev.db';
 const prisma = new PrismaClient();
 const BASE = 'http://localhost:3000';
 const SECRET = process.env.AUTH_SECRET || 'smartmenus-dev-secret-change-in-production-8f42k';

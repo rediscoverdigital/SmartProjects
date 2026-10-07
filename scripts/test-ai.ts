@@ -3,6 +3,7 @@
 import { buildAiContext, answerFromContext } from '../src/lib/ai';
 import { PrismaClient } from '@prisma/client';
 
+process.env.DATABASE_URL = 'file:./dev.db';
 const prisma = new PrismaClient();
 
 const CASES: { q: string; expect?: RegExp; lang: 'en' | 'fr'; tenant: string }[] = [
