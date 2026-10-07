@@ -1,9 +1,9 @@
 'use client';
 
-import { useTransition, useState, useEffect } from 'react';
+import { useTransition, useState, useEffect, useCallback } from 'react';
 import { resolveRequest } from '@/app/actions/dashboard';
 import { StatusPill, Empty, SectionHeading } from './ui';
-import { BellRing, Check, X, Loader2, Receipt, Droplets, Scissors, Utensils, Sparkles, Baby, MoreHorizontal } from 'lucide-react';
+import { BellRing, Check, X, Loader2, RefreshCw, Receipt, Droplets, Scissors, Utensils, Sparkles, Baby, MoreHorizontal } from 'lucide-react';
 
 type Req = {
   id: string;
@@ -14,6 +14,8 @@ type Req = {
   tableLabel: string;
   createdAt: string;
 };
+
+const REFRESH_INTERVAL_MS = 120_000; // 2 minutes
 
 const ICONS: Record<string, any> = {
   call_staff: BellRing,
@@ -26,13 +28,41 @@ const ICONS: Record<string, any> = {
   other: MoreHorizontal,
 };
 
-export function FloorBoard({ requests }: { requests: Req[] }) {
-  const [, setTick] = useState(0);
-  // refresh "time ago" labels without a full reload
+export function FloorBoard({ requests: initialRequests }: { requests: Req[] }) {
+  const [requests, setRequests] = useState<Req[]>(initialRequests);
+  const [loading, setLoading] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [tick, setTick] = useState(0);
+
+  // Refresh "time ago" labels every 30 seconds
   useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), 30000);
     return () => clearInterval(id);
   }, []);
+
+  // Shared fetcher — used by the 2-minute poll and by post-action refreshes
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/floor', { cache: 'no-store' });
+      if (res.ok) {
+        const data: Req[] = await res.json();
+        setRequests(data);
+        setLastRefresh(new Date());
+      }
+    } catch {
+      // network errors are non-fatal; keep showing the last known state
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Auto-refresh the full request list every 2 minutes
+  useEffect(() => {
+    refresh();
+    const id = setInterval(refresh, REFRESH_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [refresh]);
 
   const open = requests.filter((r) => r.status === 'new' || r.status === 'acknowledged');
   const done = requests.filter((r) => r.status === 'resolved' || r.status === 'cancelled');
@@ -44,6 +74,14 @@ export function FloorBoard({ requests }: { requests: Req[] }) {
         <p className="text-[0.82rem] text-black/45">
           {open.length} open {open.length === 1 ? 'request' : 'requests'} · updates as guests tap
         </p>
+        <div className="mt-2 flex items-center gap-2 text-[0.72rem] text-black/40">
+          <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} />
+          <span>
+            {lastRefresh
+              ? `Auto-refreshing every 2 min · last updated ${lastRefresh.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`
+              : 'Setting up live updates…'}
+          </span>
+        </div>
       </div>
 
       {open.length === 0 ? (
@@ -53,7 +91,7 @@ export function FloorBoard({ requests }: { requests: Req[] }) {
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {open.map((r) => (
-            <RequestCard key={r.id} req={r} />
+            <RequestCard key={r.id} req={r} onResolved={refresh} />
           ))}
         </div>
       )}
@@ -81,10 +119,16 @@ export function FloorBoard({ requests }: { requests: Req[] }) {
   );
 }
 
-function RequestCard({ req }: { req: Req }) {
+function RequestCard({ req, onResolved }: { req: Req; onResolved: () => Promise<void> }) {
   const [pending, start] = useTransition();
   const Icon = ICONS[req.kind] || MoreHorizontal;
   const isNew = req.status === 'new';
+
+  const act = (status: 'acknowledged' | 'resolved') =>
+    start(async () => {
+      await resolveRequest(req.id, status);
+      await onResolved();
+    });
 
   return (
     <div className={`dash-card p-4 ${isNew ? 'ring-2 ring-[#C25E1E]/25' : ''}`}>
@@ -104,7 +148,7 @@ function RequestCard({ req }: { req: Req }) {
       <div className="mt-4 flex gap-2">
         {isNew && (
           <button
-            onClick={() => start(async () => { await resolveRequest(req.id, 'acknowledged'); })}
+            onClick={() => act('acknowledged')}
             disabled={pending}
             className="flex flex-1 items-center justify-center gap-1.5 rounded-full border border-black/10 bg-white py-2.5 text-[0.8rem] font-semibold transition hover:border-black/25 disabled:opacity-60"
           >
@@ -112,7 +156,7 @@ function RequestCard({ req }: { req: Req }) {
           </button>
         )}
         <button
-          onClick={() => start(async () => { await resolveRequest(req.id, 'resolved'); })}
+          onClick={() => act('resolved')}
           disabled={pending}
           className="flex flex-1 items-center justify-center gap-1.5 rounded-full bg-[#0c0c0c] py-2.5 text-[0.8rem] font-semibold text-white transition hover:bg-black disabled:opacity-60"
         >
