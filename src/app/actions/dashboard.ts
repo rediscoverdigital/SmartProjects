@@ -335,6 +335,35 @@ export async function createTenant(formData: FormData) {
 
   const { generatePublicCode } = await import('@/lib/utils');
 
+  // ── Hero image upload ─────────────────────────────────────
+  const ALLOWED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
+  const MAX_IMAGE_BYTES = 2 * 1024 * 1024; // 2 MB — recommended 1920×1080
+  let coverPath: string | null = null;
+
+  const heroFile = formData.get('heroImage') as File | null;
+  if (heroFile && heroFile.size > 0) {
+    if (!ALLOWED_IMAGE_TYPES.includes(heroFile.type)) {
+      return { error: 'Hero image must be PNG, JPEG, or WebP.' };
+    }
+    if (heroFile.size > MAX_IMAGE_BYTES) {
+      return { error: `Hero image must be smaller than ${MAX_IMAGE_BYTES / 1024 / 1024} MB.` };
+    }
+    const arrayBuf = await heroFile.arrayBuffer();
+    // For PNG, validate the signature via our utility
+    if (heroFile.type.includes('png')) {
+      const { validateLogoDimensionsSync } = await import('@/lib/image-utils');
+      const dims = validateLogoDimensionsSync(arrayBuf);
+      if (dims.error) return { error: dims.error };
+    }
+    const bytes = Buffer.from(arrayBuf);
+    const ext = heroFile.type.split('/')[1];
+    const filename = `cover_${crypto.randomBytes(8).toString('hex')}.${ext}`;
+    const fs = await import('fs/promises');
+    await fs.mkdir(LOGO_DIR, { recursive: true }).catch(() => {});
+    await fs.writeFile(`${LOGO_DIR}/${filename}`, bytes);
+    coverPath = `/uploads/${filename}`;
+  }
+
   // Create the restaurant + owner in a transaction
   const result = await prisma.$transaction(async (tx) => {
     const restaurant = await tx.restaurant.create({
@@ -345,6 +374,7 @@ export async function createTenant(formData: FormData) {
         address: formString(formData, 'address') || null,
         phone: formString(formData, 'phone') || null,
         email: formString(formData, 'email') || null,
+        coverImage: coverPath || undefined,
         primaryColor: formString(formData, 'primaryColor') || undefined,
         accentColor: formString(formData, 'accentColor') || undefined,
         surfaceColor: formString(formData, 'surfaceColor') || undefined,

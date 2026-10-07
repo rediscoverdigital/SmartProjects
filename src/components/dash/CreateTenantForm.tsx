@@ -145,6 +145,26 @@ export function CreateTenantForm() {
           </label>
         </div>
 
+        <label className="block">
+          <span className={labelCls}>Hero image (optional)</span>
+          <div className="rounded-xl border-2 border-dashed border-black/10 p-4 text-center transition hover:border-black/20">
+            <input
+              type="file"
+              name="heroImage"
+              accept="image/png,image/jpeg,image/webp"
+              className="hidden"
+              id="heroImage"
+            />
+            <label htmlFor="heroImage" className="flex cursor-pointer flex-col items-center gap-2 text-[0.82rem]">
+              <svg className="h-6 w-6 text-black/40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2 2v0M3 7V5a2 2 0 012-2h16a2 2 0 012 2v2M7 11l3 3 2-2 3 3M13 13l3-3M9 16h6" /></svg>
+              <span className="font-medium">Click to upload hero image</span>
+            </label>
+            <p className="mt-1.5 text-[0.68rem] text-black/40">
+              Recommended: 1920 × 1080 px, PNG/JPEG/WebP, max 2 MB
+            </p>
+          </div>
+        </label>
+
         {err && (
           <p className="rounded-lg bg-red-50 px-3.5 py-2.5 text-[0.82rem] text-red-700">{err}</p>
         )}
