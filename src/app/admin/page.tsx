@@ -4,9 +4,10 @@ import { getCurrentUser } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { StatCard, SectionHeading, BarList, StatusPill } from '@/components/dash/ui';
 import { CreateTenantForm } from '@/components/dash/CreateTenantForm';
+import { TenantUsersPanel } from '@/components/dash/TenantUsersPanel';
 import { logoutAction } from '@/app/actions/auth';
-import { createTenant } from '@/app/actions/dashboard';
-import { Plus, Building2, Users, QrCode, Sparkles, TrendingUp, ExternalLink, LogOut, IndianRupee, Copy, CheckCircle } from 'lucide-react';
+import { createTenant, suspendTenant, resetUserPassword, updateUserStatus } from '@/app/actions/dashboard';
+import { Plus, Building2, Users, QrCode, Sparkles, TrendingUp, ExternalLink, LogOut, IndianRupee, Copy, CheckCircle, MoreVertical, Ban, Unlock, Key, Eye, EyeOff } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,13 +20,18 @@ export default async function AdminPage() {
   monthStart.setDate(1);
   monthStart.setHours(0, 0, 0, 0);
 
-  const [restaurants, users, objects, aiConvos, subs, allItems] = await Promise.all([
+  const [restaurants, users, objects, aiConvos, subs, allItems, tenantUsers] = await Promise.all([
     prisma.restaurant.findMany({ include: { _count: { select: { items: true, tables: true, sessions: true, users: true } } }, orderBy: { createdAt: 'asc' } }),
     prisma.user.count(),
     prisma.physicalObject.count(),
     prisma.aiConversation.count({ where: { startedAt: { gte: monthStart } } }),
     prisma.subscription.findMany(),
     prisma.menuItem.count(),
+    prisma.user.findMany({
+      where: { restaurantId: { not: null } },
+      include: { restaurant: { select: { name: true, slug: true } } },
+      orderBy: { createdAt: 'desc' },
+    }),
   ]);
 
   const mrr = subs.filter((s) => s.status === 'active').reduce((n, s) => n + s.monthlyPrice, 0);
@@ -101,6 +107,23 @@ export default async function AdminPage() {
                         Open <ExternalLink className="h-3 w-3" />
                       </Link>
                     </td>
+                    <td className="px-5 py-3.5">
+                      <form action={suspendTenant}>
+                        <input type="hidden" name="restaurantId" value={r.id} />
+                        <input type="hidden" name="suspend" value={r.status === 'active' ? 'true' : 'false'} />
+                        <button
+                          type="submit"
+                          className={`inline-flex items-center justify-center gap-1 rounded-lg border px-2.5 py-1 text-[0.68rem] font-bold uppercase transition ${
+                            r.status === 'active'
+                              ? 'border-red-200 text-red-700 hover:bg-red-50'
+                              : 'border-green-200 text-green-700 hover:bg-green-50'
+                          }`}
+                        >
+                          {r.status === 'active' ? <Ban className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
+                          {r.status === 'active' ? 'Suspend' : 'Reactivate'}
+                        </button>
+                      </form>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -133,6 +156,23 @@ export default async function AdminPage() {
               })}
             </div>
           </div>
+        </div>
+
+        <div className="dash-card overflow-hidden">
+          <div className="border-b border-black/[0.06] px-5 py-4">
+            <SectionHeading title="Tenant users" action={<span className="text-[0.75rem] text-black/40">{tenantUsers.length} total</span>} />
+          </div>
+          <TenantUsersPanel
+            users={tenantUsers.map((u) => ({
+              id: u.id,
+              name: u.name,
+              email: u.email,
+              role: u.role,
+              status: u.status,
+              restaurantName: u.restaurant?.name ?? null,
+              restaurantSlug: u.restaurant?.slug ?? null,
+            }))}
+          />
         </div>
 
         <p className="pb-6 text-center text-[0.72rem] text-black/35">

@@ -452,3 +452,113 @@ export async function createTenant(formData: FormData) {
     guestUrl: `/t/${result.tableCode}`,
   };
 }
+
+// ── TENANT MANAGEMENT (super_admin only) ─────────────────────
+
+export async function suspendTenant(formData: FormData): Promise<void> {
+  const user = await requireTenant();
+  if (user.role !== 'super_admin') return;
+
+  const restaurantId = String(formData.get('restaurantId') || '');
+  const suspend = String(formData.get('suspend') || '') === 'true';
+  if (!restaurantId) return;
+
+  const restaurant = await prisma.restaurant.findUnique({ where: { id: restaurantId } });
+  if (!restaurant) return;
+
+  await prisma.restaurant.update({
+    where: { id: restaurantId },
+    data: { status: suspend ? 'suspended' : 'active' },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      actorId: user.id,
+      actorEmail: user.email,
+      action: suspend ? 'tenant.suspended' : 'tenant.reactivated',
+      entityType: 'Restaurant',
+      entityId: restaurantId,
+    },
+  }).catch(() => {});
+
+  revalidatePath('/admin');
+}
+
+export async function resetUserPassword(formData: FormData) {
+  const user = await requireTenant();
+  if (user.role !== 'super_admin') return { error: 'Only platform admins can reset passwords.' };
+
+  const userId = String(formData.get('userId') || '');
+  if (!userId) return { error: 'No user specified.' };
+
+  const targetUser = await prisma.user.findUnique({ where: { id: userId } });
+  if (!targetUser) return { error: 'User not found.' };
+
+  if (targetUser.role === 'super_admin' && targetUser.id !== user.id) {
+    return { error: 'Cannot reset another super admin password.' };
+  }
+
+  // Generate a strong random password (admin shares it with the user)
+  const cryptoMod = await import('crypto');
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  const bytes = cryptoMod.randomBytes(12);
+  let newPassword = '';
+  for (let i = 0; i < 12; i++) newPassword += alphabet[bytes[i] % alphabet.length];
+
+  const bcrypt = await import('bcryptjs');
+  const hash = await bcrypt.hash(newPassword, 10);
+  await prisma.user.update({
+    where: { id: userId },
+    data: { passwordHash: hash, status: 'active' },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      restaurantId: targetUser.restaurantId ?? undefined,
+      actorId: user.id,
+      actorEmail: user.email,
+      action: 'user.password_reset',
+      entityType: 'User',
+      entityId: userId,
+      detail: JSON.stringify({ email: targetUser.email }),
+    },
+  }).catch(() => {});
+
+  revalidatePath('/admin');
+  return { ok: true, userId, email: targetUser.email, newPassword };
+}
+
+export async function updateUserStatus(userId: string, status: 'active' | 'suspended' | 'invited') {
+  const user = await requireTenant();
+  if (user.role !== 'super_admin') return { error: 'Only platform admins can manage users.' };
+
+  const targetUser = await prisma.user.findUnique({ where: { id: userId } });
+  if (!targetUser) return { error: 'User not found.' };
+
+  if (targetUser.role === 'super_admin' && targetUser.id !== user.id) {
+    return { error: 'Cannot modify another super admin.' };
+  }
+  if (targetUser.id === user.id) {
+    return { error: 'You cannot modify your own account.' };
+  }
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { status },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      restaurantId: targetUser.restaurantId ?? undefined,
+      actorId: user.id,
+      actorEmail: user.email,
+      action: 'user.status_changed',
+      entityType: 'User',
+      entityId: userId,
+      detail: JSON.stringify({ status }),
+    },
+  }).catch(() => {});
+
+  revalidatePath('/admin');
+  return { ok: true };
+}
