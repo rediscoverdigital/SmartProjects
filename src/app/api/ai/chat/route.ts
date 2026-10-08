@@ -21,6 +21,20 @@ const WINDOW_MS = 60_000;
 const MAX_PER_WINDOW = 20;
 const hits = new Map<string, number[]>();
 
+// Periodically prune stale entries to prevent unbounded memory growth
+const pruneInterval = setInterval(() => {
+  const now = Date.now();
+  for (const [key, arr] of hits) {
+    const fresh = arr.filter((t) => now - t < WINDOW_MS);
+    if (fresh.length === 0) hits.delete(key);
+    else hits.set(key, fresh);
+  }
+}, 5 * 60_000); // every 5 minutes
+// Don't keep the Node process alive just for this timer
+if (typeof pruneInterval === 'object' && 'unref' in pruneInterval) {
+  (pruneInterval as NodeJS.Timeout).unref();
+}
+
 function rateLimited(key: string) {
   const now = Date.now();
   const arr = (hits.get(key) ?? []).filter((t) => now - t < WINDOW_MS);

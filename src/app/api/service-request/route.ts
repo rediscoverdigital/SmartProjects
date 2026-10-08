@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { track } from '@/lib/analytics';
 import { z } from 'zod';
+import { checkCsrf, checkRateLimit, validateTableId, sanitizeString } from '@/lib/security';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,6 +16,14 @@ const schema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  // CSRF protection
+  const csrf = checkCsrf(req);
+  if (csrf) return csrf;
+
+  // Rate limiting
+  const rate = checkRateLimit(req);
+  if (rate) return rate;
+
   const body = await req.json().catch(() => null);
   const parsed = schema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
@@ -25,14 +34,18 @@ export async function POST(req: NextRequest) {
   if (d.kind === 'call_staff' && !r.featCallStaff) return NextResponse.json({ error: 'disabled' }, { status: 403 });
   if (d.kind === 'bill' && !r.featBill) return NextResponse.json({ error: 'disabled' }, { status: 403 });
 
+  // Validate tableId belongs to this restaurant
+  const tableErr = await validateTableId(d.restaurantId, d.tableId);
+  if (tableErr) return tableErr;
+
   const req_ = await prisma.serviceRequest.create({
     data: {
       restaurantId: d.restaurantId,
       tableId: d.tableId || null,
       sessionId: d.sessionId || null,
       kind: d.kind,
-      label: d.label || d.kind.replace('_', ' '),
-      note: d.note || null,
+      label: sanitizeString(d.label, 100) || d.kind.replace('_', ' '),
+      note: sanitizeString(d.note, 300),
       status: 'new',
     },
   });

@@ -3,6 +3,13 @@ import { getServiceRequests } from '@/lib/analytics-queries';
 
 export const dynamic = 'force-dynamic';
 
+// ── SSE connection limiting ────────────────────────────────
+// Each SSE connection holds a server resource. Limit concurrent
+// connections per restaurant to prevent accidental or malicious
+// connection exhaustion.
+const MAX_SSE_PER_RESTAURANT = 10;
+const sseConnections = new Map<string, number>();
+
 /** Resolve the caller from either a dashboard session or a TV token. */
 async function resolveCaller(req: Request) {
   const url = new URL(req.url);
@@ -37,6 +44,14 @@ export async function GET(req: Request) {
   // ── SSE stream: pushes updates every 5s, appears instant to the viewer ──
   if (url.searchParams.get('live') === 'sse') {
     const restaurantId = caller.restaurantId;
+
+    // Enforce connection limit per restaurant
+    const current = sseConnections.get(restaurantId) ?? 0;
+    if (current >= MAX_SSE_PER_RESTAURANT) {
+      return new Response(JSON.stringify({ error: 'Too many connections' }), { status: 429 });
+    }
+    sseConnections.set(restaurantId, current + 1);
+
     let timer: ReturnType<typeof setInterval> | null = null;
     let closed = false;
 
@@ -63,6 +78,10 @@ export async function GET(req: Request) {
           clearInterval(timer);
           timer = null;
         }
+        // Release the connection slot
+        const remaining = (sseConnections.get(restaurantId) ?? 1) - 1;
+        if (remaining <= 0) sseConnections.delete(restaurantId);
+        else sseConnections.set(restaurantId, remaining);
       },
     });
 

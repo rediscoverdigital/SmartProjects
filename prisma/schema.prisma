@@ -108,6 +108,10 @@ model User {
   /// When the reset token stops being valid.
   passwordResetExpiry DateTime?
   lastLoginAt   DateTime?
+  /// Session version: incremented on password change, suspension, or
+  /// privilege change. The auth cookie embeds this so a stale session
+  /// can be invalidated server-side without storing revocation lists.
+  sessionVersion Int    @default(1)
   createdAt     DateTime @default(now())
 
   restaurant Restaurant? @relation(fields: [restaurantId], references: [id], onDelete: Cascade)

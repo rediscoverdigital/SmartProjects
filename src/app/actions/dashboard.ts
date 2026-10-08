@@ -2,13 +2,14 @@
 
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/db';
-import { requireTenant } from '@/lib/auth';
+import { requireTenant, can } from '@/lib/auth';
 import { generatePublicCode } from '@/lib/utils';
 
 // ── SERVICE REQUESTS ───────────────────────────────────────
 export async function resolveRequest(id: string, status: 'acknowledged' | 'resolved' | 'cancelled') {
   const user = await requireTenant();
   if (!user.restaurantId) return { error: 'No tenant' };
+  if (!await can(user, 'canResolveServiceRequests')) return { error: 'Not permitted' };
   const req = await prisma.serviceRequest.findFirst({ where: { id, restaurantId: user.restaurantId } });
   if (!req) return { error: 'Not found' };
   await prisma.serviceRequest.update({
@@ -27,6 +28,7 @@ export async function resolveRequest(id: string, status: 'acknowledged' | 'resol
 export async function createTable(formData: FormData) {
   const user = await requireTenant();
   if (!user.restaurantId) return { error: 'No tenant' };
+  if (!await can(user, 'canManageTables')) return { error: 'Not permitted' };
   const label = String(formData.get('label') || '').trim();
   const locationId = String(formData.get('locationId') || '') || null;
   const seats = Number(formData.get('seats') || 0) || null;
@@ -55,6 +57,7 @@ export async function createTable(formData: FormData) {
 export async function createLocation(formData: FormData) {
   const user = await requireTenant();
   if (!user.restaurantId) return { error: 'No tenant' };
+  if (!await can(user, 'canManageTables')) return { error: 'Not permitted' };
   const name = String(formData.get('name') || '').trim();
   const kind = String(formData.get('kind') || 'room');
   if (!name) return { error: 'Name required' };
@@ -66,6 +69,7 @@ export async function createLocation(formData: FormData) {
 export async function suspendObject(objectId: string) {
   const user = await requireTenant();
   if (!user.restaurantId) return { error: 'No tenant' };
+  if (!await can(user, 'canManageTables')) return { error: 'Not permitted' };
   const obj = await prisma.physicalObject.findFirst({ where: { id: objectId, restaurantId: user.restaurantId } });
   if (!obj) return { error: 'Not found' };
   const next = obj.status === 'active' ? 'suspended' : 'active';
@@ -81,6 +85,7 @@ export async function suspendObject(objectId: string) {
 export async function replaceObject(formData: FormData) {
   const user = await requireTenant();
   if (!user.restaurantId) return { error: 'No tenant' };
+  if (!await can(user, 'canManageTables')) return { error: 'Not permitted' };
   const oldId = String(formData.get('oldId') || '');
   const newCode = String(formData.get('newCode') || '').trim().toUpperCase();
   const nfcUid = String(formData.get('nfcUid') || '').trim() || null;
@@ -117,29 +122,34 @@ export async function replaceObject(formData: FormData) {
 export async function saveBranding(formData: FormData) {
   const user = await requireTenant();
   if (!user.restaurantId) return { error: 'No tenant' };
+  if (!await can(user, 'canManageBranding')) return { error: 'Not permitted' };
   const g = (k: string) => String(formData.get(k) ?? '').trim();
+  // Only write a nullable field when it was actually submitted. A partial
+  // POST (or a probe) must never silently wipe existing values — an empty
+  // string that IS submitted still clears the field deliberately.
+  const opt = (k: string) => (formData.has(k) ? g(k) || null : undefined);
   await prisma.restaurant.update({
     where: { id: user.restaurantId },
     data: {
       name: g('name') || undefined,
-      tagline: g('tagline') || null,
-      welcomeMsg: g('welcomeMsg') || null,
+      tagline: opt('tagline'),
+      welcomeMsg: opt('welcomeMsg'),
       primaryColor: g('primaryColor') || undefined,
       accentColor: g('accentColor') || undefined,
       surfaceColor: g('surfaceColor') || undefined,
       textColor: g('textColor') || undefined,
       themeMode: g('themeMode') || undefined,
       buttonStyle: g('buttonStyle') || undefined,
-      coverImage: g('coverImage') || null,
-      logo: g('logo') || null,
-      logoText: g('logoText') || null,
-      address: g('address') || null,
-      phone: g('phone') || null,
-      email: g('email') || null,
-      wifiName: g('wifiName') || null,
-      wifiPassword: g('wifiPassword') || null,
-      instagram: g('instagram') || null,
-      website: g('website') || null,
+      coverImage: opt('coverImage'),
+      logo: opt('logo'),
+      logoText: opt('logoText'),
+      address: opt('address'),
+      phone: opt('phone'),
+      email: opt('email'),
+      wifiName: opt('wifiName'),
+      wifiPassword: opt('wifiPassword'),
+      instagram: opt('instagram'),
+      website: opt('website'),
       currency: g('currency') || undefined,
       defaultLang: g('defaultLang') || undefined,
       featAi: formData.get('featAi') === 'on',
@@ -162,6 +172,7 @@ export async function saveBranding(formData: FormData) {
 export async function saveAiConfig(formData: FormData) {
   const user = await requireTenant();
   if (!user.restaurantId) return { error: 'No tenant' };
+  if (!await can(user, 'canConfigureAi')) return { error: 'Not permitted' };
   const welcome = String(formData.get('welcomeMsg') || '').trim() || null;
   const quota = Number(formData.get('aiMonthlyQuota') || 2000);
   const featAi = formData.get('featAi') === 'on';
@@ -173,6 +184,7 @@ export async function saveAiConfig(formData: FormData) {
 export async function saveFaq(formData: FormData) {
   const user = await requireTenant();
   if (!user.restaurantId) return { error: 'No tenant' };
+  if (!await can(user, 'canConfigureAi')) return { error: 'Not permitted' };
   const id = String(formData.get('id') || '');
   const question = String(formData.get('question') || '').trim();
   const questionFr = String(formData.get('questionFr') || '').trim() || null;
@@ -193,6 +205,7 @@ export async function saveFaq(formData: FormData) {
 export async function deleteFaq(id: string) {
   const user = await requireTenant();
   if (!user.restaurantId) return { error: 'No tenant' };
+  if (!await can(user, 'canConfigureAi')) return { error: 'Not permitted' };
   const f = await prisma.faq.findFirst({ where: { id, restaurantId: user.restaurantId } });
   if (!f) return { error: 'Not found' };
   await prisma.faq.delete({ where: { id } });
@@ -204,7 +217,7 @@ export async function deleteFaq(id: string) {
 export async function inviteStaff(formData: FormData) {
   const user = await requireTenant();
   if (!user.restaurantId) return { error: 'No tenant' };
-  if (user.role === 'staff') return { error: 'Only owners can manage staff.' };
+  if (!await can(user, 'canManageStaff')) return { error: 'Not permitted' };
   const email = String(formData.get('email') || '').trim().toLowerCase();
   const name = String(formData.get('name') || '').trim();
   const role = String(formData.get('role') || 'staff');
@@ -224,7 +237,8 @@ export async function inviteStaff(formData: FormData) {
 
 export async function setStaffStatus(userId: string, status: string) {
   const user = await requireTenant();
-  if (!user.restaurantId || user.role === 'staff') return { error: 'Not permitted' };
+  if (!user.restaurantId) return { error: 'No tenant' };
+  if (!await can(user, 'canManageStaff')) return { error: 'Not permitted' };
   const target = await prisma.user.findFirst({ where: { id: userId, restaurantId: user.restaurantId } });
   if (!target) return { error: 'Not found' };
   if (target.id === user.id) return { error: 'You cannot change your own access.' };
@@ -242,7 +256,8 @@ const PERMISSION_KEYS = [
 
 export async function setStaffPermissions(formData: FormData) {
   const user = await requireTenant();
-  if (!user.restaurantId || user.role === 'staff') return { error: 'Only owners can manage staff permissions.' };
+  if (!user.restaurantId) return { error: 'No tenant' };
+  if (!await can(user, 'canManageStaff')) return { error: 'Not permitted' };
   const targetId = String(formData.get('userId') || '');
   const target = await prisma.user.findFirst({ where: { id: targetId, restaurantId: user.restaurantId } });
   if (!target) return { error: 'User not found.' };
@@ -251,7 +266,14 @@ export async function setStaffPermissions(formData: FormData) {
   for (const key of PERMISSION_KEYS) {
     permissions[key] = formData.get(key) === 'on';
   }
-  await prisma.user.update({ where: { id: targetId }, data: { permissions: JSON.stringify(permissions) } });
+  await prisma.user.update({
+    where: { id: targetId },
+    data: {
+      permissions: JSON.stringify(permissions),
+      // Invalidate the staff member's session so new permissions take effect immediately
+      sessionVersion: { increment: 1 },
+    },
+  });
   await prisma.auditLog.create({
     data: { restaurantId: user.restaurantId, actorId: user.id, actorEmail: user.email, action: 'staff.permissions_updated', entityType: 'User', entityId: targetId, detail: JSON.stringify(permissions) },
   }).catch(() => {});
@@ -267,6 +289,7 @@ const LOGO_ALLOWED = ['image/png', 'image/x-png', 'image/webp'];
 export async function uploadLogo(formData: FormData) {
   const user = await requireTenant();
   if (!user.restaurantId) return { error: 'No tenant' };
+  if (!await can(user, 'canManageBranding')) return { error: 'Not permitted' };
   const file = formData.get('logo') as File | null;
   if (!file) return { error: 'No file provided.' };
   if (!file.type || !LOGO_ALLOWED.includes(file.type)) return { error: 'Only PNG files are accepted.' };
@@ -277,6 +300,11 @@ export async function uploadLogo(formData: FormData) {
   const arrayBuf = await file.arrayBuffer();
   const dims = validateLogoDimensionsSync(arrayBuf);
   if (dims.error) return { error: dims.error };
+
+  // Additional check: verify the file content matches the declared MIME type
+  const { validateImageSignature } = await import('@/lib/image-utils');
+  const sigCheck = validateImageSignature(Buffer.from(arrayBuf), file.type);
+  if (sigCheck.error) return { error: sigCheck.error };
 
   const bytes = Buffer.from(arrayBuf);
   const crypto = await import('crypto');
@@ -305,6 +333,7 @@ const HERO_MAX_BYTES = 2 * 1024 * 1024; // 2 MB
 export async function uploadHero(formData: FormData) {
   const user = await requireTenant();
   if (!user.restaurantId) return { error: 'No tenant' };
+  if (!await can(user, 'canManageBranding')) return { error: 'Not permitted' };
 
   const file = formData.get('heroImage') as File | null;
   if (!file || file.size === 0) return { error: 'No file provided.' };
@@ -318,6 +347,12 @@ export async function uploadHero(formData: FormData) {
 
   const arrayBuf = await file.arrayBuffer();
   const bytes = Buffer.from(arrayBuf);
+
+  // Validate actual file signature matches declared MIME type
+  const { validateImageSignature } = await import('@/lib/image-utils');
+  const sigCheck = validateImageSignature(bytes, file.type);
+  if (sigCheck.error) return { error: sigCheck.error };
+
   const ext = file.type.split('/')[1];
   const filename = `cover_${crypto.randomBytes(8).toString('hex')}.${ext}`;
 
@@ -503,6 +538,7 @@ export async function createTenant(formData: FormData) {
 export async function updateOrderStatus(orderId: string, status: 'acknowledged' | 'served' | 'cancelled') {
   const user = await requireTenant();
   if (!user.restaurantId) return { error: 'No tenant' };
+  if (!await can(user, 'canResolveServiceRequests')) return { error: 'Not permitted' };
 
   // tenant-scoped: only touch orders belonging to this restaurant
   const order = await prisma.order.findFirst({ where: { id: orderId, restaurantId: user.restaurantId } });
@@ -533,7 +569,7 @@ export async function updateOrderStatus(orderId: string, status: 'acknowledged' 
 export async function generateTvToken() {
   const user = await requireTenant();
   if (!user.restaurantId) return { error: 'No tenant' };
-  if (user.role === 'staff') return { error: 'Only owners can manage the TV view.' };
+  if (!await can(user, 'canManageBranding')) return { error: 'Not permitted' };
 
   const crypto = await import('crypto');
   const token = crypto.randomBytes(24).toString('base64url');
@@ -562,7 +598,7 @@ export async function generateTvToken() {
 export async function revokeTvToken() {
   const user = await requireTenant();
   if (!user.restaurantId) return { error: 'No tenant' };
-  if (user.role === 'staff') return { error: 'Only owners can manage the TV view.' };
+  if (!await can(user, 'canManageBranding')) return { error: 'Not permitted' };
 
   await prisma.restaurant.update({
     where: { id: user.restaurantId },
@@ -600,6 +636,12 @@ export async function suspendTenant(formData: FormData): Promise<void> {
   await prisma.restaurant.update({
     where: { id: restaurantId },
     data: { status: suspend ? 'suspended' : 'active' },
+  });
+
+  // Invalidate all sessions for users in this restaurant
+  await prisma.user.updateMany({
+    where: { restaurantId },
+    data: { sessionVersion: { increment: 1 } },
   });
 
   await prisma.auditLog.create({

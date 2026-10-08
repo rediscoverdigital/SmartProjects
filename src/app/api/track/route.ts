@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { track, touchSession } from '@/lib/analytics';
 import { z } from 'zod';
+import { checkCsrf, checkRateLimit, validateTableId, sanitizeString } from '@/lib/security';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,10 +18,22 @@ const schema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  // CSRF protection
+  const csrf = checkCsrf(req);
+  if (csrf) return csrf;
+
+  // Rate limiting
+  const rate = checkRateLimit(req);
+  if (rate) return rate;
+
   const body = await req.json().catch(() => null);
   const parsed = schema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ ok: false }, { status: 400 });
   const d = parsed.data;
+
+  // Validate tableId belongs to this restaurant
+  const tableErr = await validateTableId(d.restaurantId, d.tableId);
+  if (tableErr) return tableErr;
 
   // ensure the session (if any) actually belongs to this restaurant — tenant isolation
   let sessionId = d.sessionId || null;
@@ -34,10 +47,10 @@ export async function POST(req: NextRequest) {
     restaurantId: d.restaurantId,
     sessionId,
     tableId: d.tableId || null,
-    event: d.event,
-    entityType: d.entityType || null,
-    entityId: d.entityId || null,
-    entityLabel: d.entityLabel || null,
+    event: sanitizeString(d.event, 60) || 'unknown',
+    entityType: sanitizeString(d.entityType, 50),
+    entityId: sanitizeString(d.entityId, 100),
+    entityLabel: sanitizeString(d.entityLabel, 200),
     meta: d.meta || null,
   });
 
