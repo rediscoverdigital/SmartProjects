@@ -1,5 +1,6 @@
 import { getCurrentUser } from '@/lib/auth';
 import { getServiceRequests } from '@/lib/analytics-queries';
+import { prisma } from '@/lib/db';
 import { FloorBoard } from '@/components/dash/FloorBoard';
 
 export const dynamic = 'force-dynamic';
@@ -7,7 +8,15 @@ export const dynamic = 'force-dynamic';
 export default async function FloorPage() {
   const user = await getCurrentUser();
   if (!user?.restaurantId) return null;
-  const reqs = await getServiceRequests(user.restaurantId);
+
+  const [reqs, restaurant] = await Promise.all([
+    getServiceRequests(user.restaurantId),
+    prisma.restaurant.findUnique({
+      where: { id: user.restaurantId },
+      select: { tvToken: true },
+    }),
+  ]);
+
   return (
     <FloorBoard
       requests={reqs.map((r) => ({
@@ -19,6 +28,7 @@ export default async function FloorPage() {
         tableLabel: r.table?.label ?? '—',
         createdAt: r.createdAt.toISOString(),
       }))}
+      tvToken={restaurant?.tvToken ?? null}
     />
   );
 }

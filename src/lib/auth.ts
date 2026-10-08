@@ -98,6 +98,26 @@ export async function requireTenant(restaurantId?: string): Promise<AuthUser> {
   return user;
 }
 
+/**
+ * Read a TV-view session from a public restaurant token.
+ * TV links are read-only, tenant-scoped, and revocable by regenerating
+ * the token in the dashboard. No password needed on the TV itself.
+ */
+export async function getTvSession(token: string | undefined): Promise<AuthUser | null> {
+  if (!token) return null;
+  const restaurant = await prisma.restaurant.findFirst({
+    where: { tvToken: token, status: 'active' },
+  });
+  if (!restaurant) return null;
+  return {
+    id: `tv:${restaurant.id}`,
+    email: `${restaurant.slug}@tv`,
+    name: restaurant.name,
+    role: 'owner' as Role,
+    restaurantId: restaurant.id,
+  };
+}
+
 export class AuthError extends Error {
   status: number;
   constructor(message: string, status = 403) {

@@ -3,6 +3,7 @@
 import { useTransition, useState, useEffect, useCallback } from 'react';
 import { resolveRequest } from '@/app/actions/dashboard';
 import { StatusPill, Empty, SectionHeading } from './ui';
+import { TvModePanel } from './TvModePanel';
 import { BellRing, Check, X, Loader2, RefreshCw, Receipt, Droplets, Scissors, Utensils, Sparkles, Baby, MoreHorizontal } from 'lucide-react';
 
 type Req = {
@@ -28,26 +29,80 @@ const ICONS: Record<string, any> = {
   other: MoreHorizontal,
 };
 
-export function FloorBoard({ requests: initialRequests }: { requests: Req[] }) {
+export function FloorBoard({ requests: initialRequests, tvToken = null }: { requests: Req[]; tvToken?: string | null }) {
   const [requests, setRequests] = useState<Req[]>(initialRequests);
   const [loading, setLoading] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [connected, setConnected] = useState(false);
   const [tick, setTick] = useState(0);
 
-  // Refresh "time ago" labels every 30 seconds
+  // Live updates: SSE pushes new requests instantly; polling is the fallback.
   useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 30000);
-    return () => clearInterval(id);
+    let es: EventSource | null = null;
+    let pollId: ReturnType<typeof setInterval> | null = null;
+    let cancelled = false;
+
+    const startPolling = () => {
+      if (pollId) return;
+      const poll = async () => {
+        try {
+          const res = await fetch('/api/floor', { cache: 'no-store' });
+          if (res.ok && !cancelled) {
+            setRequests(await res.json());
+            setLastRefresh(new Date());
+          }
+        } catch {
+          /* keep last known state */
+        }
+      };
+      poll();
+      pollId = setInterval(poll, REFRESH_INTERVAL_MS);
+    };
+
+    try {
+      es = new EventSource('/api/floor?live=sse');
+      es.onopen = () => {
+        setConnected(true);
+        setLastRefresh(new Date());
+        if (pollId) {
+          clearInterval(pollId);
+          pollId = null;
+        }
+      };
+      es.onmessage = (e) => {
+        if (!e.data || e.data.startsWith(':')) return;
+        try {
+          setRequests(JSON.parse(e.data));
+          setLastRefresh(new Date());
+        } catch {
+          /* ignore malformed frame */
+        }
+      };
+      es.onerror = () => {
+        setConnected(false);
+        startPolling(); // EventSource reconnects on its own; poll meanwhile
+      };
+    } catch {
+      startPolling();
+    }
+
+    const tickId = setInterval(() => setTick((t) => t + 1), 30000);
+
+    return () => {
+      cancelled = true;
+      es?.close();
+      if (pollId) clearInterval(pollId);
+      clearInterval(tickId);
+    };
   }, []);
 
-  // Shared fetcher — used by the 2-minute poll and by post-action refreshes
+  // Manual + post-action refresh (SSE will also push, this just makes it snappy)
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch('/api/floor', { cache: 'no-store' });
       if (res.ok) {
-        const data: Req[] = await res.json();
-        setRequests(data);
+        setRequests(await res.json());
         setLastRefresh(new Date());
       }
     } catch {
@@ -56,13 +111,6 @@ export function FloorBoard({ requests: initialRequests }: { requests: Req[] }) {
       setLoading(false);
     }
   }, []);
-
-  // Auto-refresh the full request list every 2 minutes
-  useEffect(() => {
-    refresh();
-    const id = setInterval(refresh, REFRESH_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [refresh]);
 
   const open = requests.filter((r) => r.status === 'new' || r.status === 'acknowledged');
   const done = requests.filter((r) => r.status === 'resolved' || r.status === 'cancelled');
@@ -77,9 +125,11 @@ export function FloorBoard({ requests: initialRequests }: { requests: Req[] }) {
         <div className="mt-2 flex items-center gap-2 text-[0.72rem] text-black/40">
           <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} />
           <span>
-            {lastRefresh
-              ? `Auto-refreshing every 2 min · last updated ${lastRefresh.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`
-              : 'Setting up live updates…'}
+            {connected
+              ? `Live — updates appear instantly · last ${lastRefresh ? lastRefresh.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '—'}`
+              : lastRefresh
+                ? `Reconnecting · last updated ${lastRefresh.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`
+                : 'Connecting to live updates…'}
           </span>
         </div>
       </div>
@@ -115,14 +165,47 @@ export function FloorBoard({ requests: initialRequests }: { requests: Req[] }) {
           </div>
         </div>
       )}
+
+      <TvModePanel initialToken={tvToken} />
+
+      <style>{`
+        @keyframes flash-orange {
+          0%, 100% { box-shadow: 0 0 0 2px rgba(194,94,30,0.35); background-color: rgba(194,94,30,0.06); }
+          50%      { box-shadow: 0 0 0 3px rgba(194,94,30,0.85); background-color: rgba(194,94,30,0.16); }
+        }
+        @keyframes flash-red {
+          0%, 100% { box-shadow: 0 0 0 2px rgba(220,38,38,0.40); background-color: rgba(220,38,38,0.07); }
+          50%      { box-shadow: 0 0 0 3px rgba(220,38,38,0.95); background-color: rgba(220,38,38,0.18); }
+        }
+        .flash-orange { animation: flash-orange 1.6s ease-in-out infinite; }
+        .flash-red    { animation: flash-red 0.9s ease-in-out infinite; }
+        @media (prefers-reduced-motion: reduce) {
+          .flash-orange, .flash-red { animation: none; }
+          .flash-orange { box-shadow: 0 0 0 3px rgba(194,94,30,0.8); }
+          .flash-red { box-shadow: 0 0 0 3px rgba(220,38,38,0.9); }
+        }
+      `}</style>
     </div>
   );
 }
 
 function RequestCard({ req, onResolved }: { req: Req; onResolved: () => Promise<void> }) {
   const [pending, start] = useTransition();
+  const [, setNow] = useState(0);
   const Icon = ICONS[req.kind] || MoreHorizontal;
   const isNew = req.status === 'new';
+
+  // re-render every 30s so escalation classes stay current
+  useEffect(() => {
+    const id = setInterval(() => setNow((n) => n + 1), 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  const ageMs = Date.now() - new Date(req.createdAt).getTime();
+  const isUnacknowledged = isNew;
+  let escalate = '';
+  if (isUnacknowledged && ageMs >= 5 * 60 * 1000) escalate = 'flash-red';
+  else if (isUnacknowledged && ageMs >= 2 * 60 * 1000) escalate = 'flash-orange';
 
   const act = (status: 'acknowledged' | 'resolved') =>
     start(async () => {
@@ -131,7 +214,7 @@ function RequestCard({ req, onResolved }: { req: Req; onResolved: () => Promise<
     });
 
   return (
-    <div className={`dash-card p-4 ${isNew ? 'ring-2 ring-[#C25E1E]/25' : ''}`}>
+    <div className={`dash-card p-4 ${escalate || (isNew ? 'ring-2 ring-[#C25E1E]/25' : '')}`}>
       <div className="flex items-start justify-between">
         <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-black/[0.05]">
           <Icon className="h-5 w-5 text-[#C25E1E]" />

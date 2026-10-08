@@ -526,6 +526,64 @@ export async function updateOrderStatus(orderId: string, status: 'acknowledged' 
   return { ok: true, status };
 }
 
+// ── TV MODE ──────────────────────────────────────────────────
+
+/** Generate (or regenerate) the public TV token for this restaurant.
+ * Regenerating instantly revokes the old TV link. */
+export async function generateTvToken() {
+  const user = await requireTenant();
+  if (!user.restaurantId) return { error: 'No tenant' };
+  if (user.role === 'staff') return { error: 'Only owners can manage the TV view.' };
+
+  const crypto = await import('crypto');
+  const token = crypto.randomBytes(24).toString('base64url');
+
+  await prisma.restaurant.update({
+    where: { id: user.restaurantId },
+    data: { tvToken: token },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      restaurantId: user.restaurantId,
+      actorId: user.id,
+      actorEmail: user.email,
+      action: 'tv.token_generated',
+      entityType: 'Restaurant',
+      entityId: user.restaurantId,
+    },
+  }).catch(() => {});
+
+  revalidatePath('/dashboard/floor');
+  return { ok: true, token };
+}
+
+/** Revoke the TV link entirely. */
+export async function revokeTvToken() {
+  const user = await requireTenant();
+  if (!user.restaurantId) return { error: 'No tenant' };
+  if (user.role === 'staff') return { error: 'Only owners can manage the TV view.' };
+
+  await prisma.restaurant.update({
+    where: { id: user.restaurantId },
+    data: { tvToken: null },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      restaurantId: user.restaurantId,
+      actorId: user.id,
+      actorEmail: user.email,
+      action: 'tv.token_revoked',
+      entityType: 'Restaurant',
+      entityId: user.restaurantId,
+    },
+  }).catch(() => {});
+
+  revalidatePath('/dashboard/floor');
+  return { ok: true };
+}
+
 // ── TENANT MANAGEMENT (super_admin only) ─────────────────────
 
 export async function suspendTenant(formData: FormData): Promise<void> {

@@ -52,6 +52,7 @@ model Restaurant {
   // lifecycle
   status        String   @default("active") // active | suspended | draft
   plan          String   @default("growth") // starter | growth | pro
+  tvToken       String?  // public token for TV-only live floor view (regenerate to revoke)
   aiMonthlyQuota Int     @default(2000)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
