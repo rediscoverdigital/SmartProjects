@@ -178,7 +178,7 @@ export function BrandingForm({ data, guestCode }: { data: any; guestCode: string
                   Used as the hero image on your guest menu's About or landing page.
                 </p>
               </div>
-              </div>
+            </div>
           </div>
 
           {/* contact */}
