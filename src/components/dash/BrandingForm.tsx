@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useState, useTransition, useRef } from 'react';
 import { saveBranding, uploadLogo } from '@/app/actions/dashboard';
 import { SectionHeading } from './ui';
 import { Loader2, Check, Palette, Store, ToggleRight, ExternalLink, Upload, X, Image } from 'lucide-react';
@@ -30,6 +30,9 @@ export function BrandingForm({ data, guestCode }: { data: any; guestCode: string
   const [logoError, setLogoError] = useState<string | null>(null);
   const [logoInputKey, setLogoInputKey] = useState(0);
   const [customizing, setCustomizing] = useState(false); // tracks if user has deviated from a preset
+  const heroInputRef = useRef<HTMLInputElement>(null);
+  const [heroUploading, setHeroUploading] = useState(false);
+  const [heroError, setHeroError] = useState<string | null>(null);
 
   const applyTheme = (t: typeof THEMES[number]) => {
     setPrimary(t.primary); setAccent(t.accent); setSurface(t.surface); setText(t.text); setMode(t.mode);
@@ -123,8 +126,59 @@ export function BrandingForm({ data, guestCode }: { data: any; guestCode: string
               </Field>
               <Field label="Tagline" full><input name="tagline" defaultValue={data.tagline ?? ''} className={inputCls} /></Field>
               <Field label="Welcome message" full><textarea name="welcomeMsg" defaultValue={data.welcomeMsg ?? ''} rows={2} className={inputCls} /></Field>
-              <Field label="Cover image URL" full><input name="coverImage" value={cover} onChange={(e) => setCover(e.target.value)} className={inputCls} /></Field>
-            </div>
+              {/* Cover / Hero image uploader */}
+              <div className="space-y-3">
+                <label className="block text-[0.7rem] font-semibold uppercase tracking-wide text-black/45">Cover image</label>
+                <input type="hidden" name="coverImage" value={cover} />
+                {cover ? (
+                  <div className="relative">
+                    <img src={cover} alt="Cover preview" className="h-20 w-full rounded-xl object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => setCover('')}
+                      className="absolute top-1.5 right-1.5 rounded-lg bg-black/50 p-1 text-white/80 transition hover:bg-black/70"
+                      title="Remove cover image"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div
+                    className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-black/15 bg-black/[0.03] px-4 py-6 text-center transition hover:border-black/30"
+                    onClick={() => heroInputRef.current?.click()}
+                  >
+                    <Image className="h-4 w-4 text-black/45" />
+                    <span className="text-[0.8rem] font-medium">{heroUploading ? 'Uploading…' : 'Upload hero image'}</span>
+                    <input
+                      ref={heroInputRef}
+                      type="file"
+                      accept="image/png, image/jpeg, image/webp"
+                      className="hidden"
+                      disabled={heroUploading}
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        setHeroError(null);
+                        setHeroUploading(true);
+                        const fd = new FormData();
+                        fd.append('heroImage', file);
+                        const res = await fetch('/dashboard/branding/upload-hero', { method: 'POST', body: fd });
+                        setHeroUploading(false);
+                        e.target.value = '';
+                        const r = await res.json();
+                        if (!res.ok) setHeroError(r?.error || 'Upload failed');
+                        else if (r?.coverImage) setCover(r.coverImage);
+                      }}
+                    />
+                  </div>
+                )}
+                {heroError && <p className="rounded-lg bg-red-50 px-3 py-2 text-[0.75rem] text-red-700">{heroError}</p>}
+                <p className="text-[0.68rem] text-black/35">
+                  PNG, JPEG, or WebP — max 2 MB. Recommended: 1920×1080 (16:9) for full-width banner.
+                  Used as the hero image on your guest menu's About or landing page.
+                </p>
+              </div>
+              </div>
           </div>
 
           {/* contact */}

@@ -298,6 +298,52 @@ export async function uploadLogo(formData: FormData) {
   return { ok: true, logo: publicPath };
 }
 
+// ── HERO / COVER IMAGE UPLOAD ─────────────────────────────────
+const HERO_ALLOWED = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
+const HERO_MAX_BYTES = 2 * 1024 * 1024; // 2 MB
+
+export async function uploadHero(formData: FormData) {
+  const user = await requireTenant();
+  if (!user.restaurantId) return { error: 'No tenant' };
+
+  const file = formData.get('heroImage') as File | null;
+  if (!file || file.size === 0) return { error: 'No file provided.' };
+
+  if (!HERO_ALLOWED.includes(file.type)) {
+    return { error: 'Hero image must be PNG, JPEG, or WebP.' };
+  }
+  if (file.size > HERO_MAX_BYTES) {
+    return { error: `Hero image must be smaller than ${HERO_MAX_BYTES / 1024 / 1024} MB.` };
+  }
+
+  const arrayBuf = await file.arrayBuffer();
+  const bytes = Buffer.from(arrayBuf);
+  const ext = file.type.split('/')[1];
+  const filename = `cover_${crypto.randomBytes(8).toString('hex')}.${ext}`;
+
+  await (await import('fs/promises')).mkdir(LOGO_DIR, { recursive: true }).catch(() => {});
+  await (await import('fs/promises')).writeFile(`${LOGO_DIR}/${filename}`, bytes);
+
+  const publicPath = `/uploads/${filename}`;
+  await prisma.restaurant.update({
+    where: { id: user.restaurantId },
+    data: { coverImage: publicPath },
+  });
+  await prisma.auditLog.create({
+    data: {
+      restaurantId: user.restaurantId,
+      actorId: user.id,
+      actorEmail: user.email,
+      action: 'branding.hero_uploaded',
+      entityType: 'Restaurant',
+      entityId: user.restaurantId,
+    },
+  }).catch(() => {});
+
+  revalidatePath('/dashboard/branding');
+  return { ok: true, coverImage: publicPath };
+}
+
 // ── TENANT CREATION (super_admin only) ───────────────────────
 import { hashPassword } from '@/lib/auth';
 import crypto from 'crypto';
@@ -336,20 +382,19 @@ export async function createTenant(formData: FormData) {
   const { generatePublicCode } = await import('@/lib/utils');
 
   // ── Hero image upload ─────────────────────────────────────
-  const ALLOWED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
+  const HERO_ALLOWED = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
   const MAX_IMAGE_BYTES = 2 * 1024 * 1024; // 2 MB — recommended 1920×1080
   let coverPath: string | null = null;
 
   const heroFile = formData.get('heroImage') as File | null;
   if (heroFile && heroFile.size > 0) {
-    if (!ALLOWED_IMAGE_TYPES.includes(heroFile.type)) {
+    if (!HERO_ALLOWED.includes(heroFile.type)) {
       return { error: 'Hero image must be PNG, JPEG, or WebP.' };
     }
     if (heroFile.size > MAX_IMAGE_BYTES) {
       return { error: `Hero image must be smaller than ${MAX_IMAGE_BYTES / 1024 / 1024} MB.` };
     }
     const arrayBuf = await heroFile.arrayBuffer();
-    // For PNG, validate the signature via our utility
     if (heroFile.type.includes('png')) {
       const { validateLogoDimensionsSync } = await import('@/lib/image-utils');
       const dims = validateLogoDimensionsSync(arrayBuf);
